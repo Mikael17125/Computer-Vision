@@ -1,4 +1,4 @@
-// g++ droidcam.cpp -o droidcam `pkg-config --cflags --libs opencv`
+// g++ -std=c++11 droidcam.cpp -o droidcam `pkg-config --cflags --libs opencv`
 
 #include "opencv2/opencv.hpp"
 #include <stdio.h>
@@ -11,7 +11,7 @@ using namespace cv;
 
 int MAX_KERNEL = 10;
 
-cv::Point leastSquare(double x[6], cv::Point y[6]);
+cv::Vec4i leastSquare(double x[6], cv::Point y[6]);
 
 int main()
 {
@@ -23,30 +23,35 @@ int main()
     std::vector<cv::Vec3f> detected;
     cv::namedWindow("Track");
 
-    cv::Point pred[6];
-    cv::Point x_pred;
+    cv::Point data[6];
+    cv::Vec4i pred;
 
     double time[6] = {0, 0, 0, 0, 0, 0};
 
     int radius = 0;
 
-    pred[0] = cv::Point(0, 0);
-    pred[1] = cv::Point(0, 0);
-    pred[2] = cv::Point(0, 0);
-    pred[3] = cv::Point(0, 0);
-    pred[4] = cv::Point(0, 0);
-    pred[5] = cv::Point(0, 0);
+    data[0] = cv::Point(0, 0);
+    data[1] = cv::Point(0, 0);
+    data[2] = cv::Point(0, 0);
+    data[3] = cv::Point(0, 0);
+    data[4] = cv::Point(0, 0);
+    data[5] = cv::Point(0, 0);
 
     // // Malam
     // int H_low = 117, S_low = 49, V_low = 82;
     // int H_high = 255, S_high = 185, V_high = 255;
     // int DP = 13;
-    ///Siang
-    int H_low = 107, S_low = 70, V_low = 165;
+    // //Siang
+    // int H_low = 107, S_low = 70, V_low = 165;
+    // int H_high = 255, S_high = 255, V_high = 255;
+    // int DP = 10;
+
+    // //White
+    int H_low = 0, S_low = 0, V_low = 250;
     int H_high = 255, S_high = 255, V_high = 255;
     int DP = 10;
 
-    VideoCapture cap(0);
+    VideoCapture cap("http://192.168.100.5:4747/mjpegfeed");
 
     if (!cap.isOpened())
         return 0;
@@ -103,8 +108,8 @@ int main()
 
             if (radius < 70)
             {
-                circle(frame, center, radius, Scalar(0, 0, 255), 3, 8, 0);
-                std::cout << radius << std::endl;
+                cv::circle(frame, center, radius, Scalar(0, 0, 255), 3, 8, 0);
+                // std::cout <<"Radius : "<< radius << std::endl;
             }
         }
 
@@ -112,27 +117,40 @@ int main()
         {
             for (int i = 5; i >= 0; i--)
             {
-                cv::circle(frame, pred[i], 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8, 0);
+                // cv::circle(frame, data[i], 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8, 0);
 
                 if (i != 0)
                 {
-                    pred[i] = pred[i - 1];
+                    data[i] = data[i - 1];
                     time[i] = time[i - 1];
                 }
             }
 
             time[0] = elapsed_scnd.count();
-            pred[0] = cv::Point(detected[0][0], detected[0][1]);
+            data[0] = cv::Point(detected[0][0], detected[0][1]);
 
-            x_pred = leastSquare(time, pred);
+            pred = leastSquare(time, data);
         }
         else
         {
-            x_pred.x = 0;
-            x_pred.y = 0;
+            pred[0] = 0;
+            pred[1] = 0;
+            pred[2] = 0;
+            pred[3] = 0;
         }
 
-        std::cout << x_pred.x << "--" << x_pred.y << std::endl;
+        for (int i = 0; i < 5; i++)
+        {
+            // A + Bx
+
+            int t_pred = elapsed_scnd.count() + i;
+            int x = pred[0] + pred[1] * t_pred;
+            int y = pred[2] + pred[3] * t_pred;
+
+            cv::Point2i center(x,y);
+
+            cv::circle(frame, center, 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8,0);
+        }
 
         imshow("MASK", opened);
         // imshow("DILATED", dilated);
@@ -146,40 +164,47 @@ int main()
     return 0;
 }
 
-cv::Point leastSquare(double x[6], cv::Point y[6])
+cv::Vec4i leastSquare(double x[6], cv::Point y[6])
 {
 
     double sigma_x = 0;
     double sigma_xx = 0;
-    double x_sigma_yy = 0;
     double x_sigma_y = 0;
     double x_sigma_xy = 0;
+    double y_sigma_y = 0;
+    double y_sigma_xy = 0;
 
-    cv::Point result;
+    cv::Vec4i result;
 
-    std::cout<<"x "<<x[0]<<std::endl;
-
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 6; i++)
     {
         sigma_x += x[i];
         sigma_xx += (x[i] * x[i]);
+
         x_sigma_y += y[i].x;
         x_sigma_xy += (x[i] * y[i].x);
-        x_sigma_yy += (y[i].x * y[i].x);
+
+        y_sigma_y += y[i].y;
+        y_sigma_xy += (x[i] * y[i].y);
     }
 
-    double Ax = (sigma_xx * x_sigma_yy) - (sigma_x * x_sigma_xy);
+    double Ax = (sigma_xx * x_sigma_y) - (sigma_x * x_sigma_xy);
     double Bx = 6 * x_sigma_xy - sigma_x * x_sigma_y;
+
+    double Ay = (sigma_xx * y_sigma_y) - (sigma_x * y_sigma_xy);
+    double By = 6 * y_sigma_xy - sigma_x * y_sigma_y;
+
     double delta = 6 * sigma_xx - std::pow(sigma_x, 2);
 
-    std::cout<<"Sigma X  "<<sigma_x<<std::endl;
-    std::cout<<"Sigma Y  "<<x_sigma_y<<std::endl;
-    std::cout<<"Sigma XY "<<x_sigma_xy<<std::endl;
-    std::cout<<"Sigma XX "<<sigma_xx<<std::endl;
-    std::cout<<"Sigma YY "<<x_sigma_yy<<std::endl;
+    // std::cout << "Sigma X  " << sigma_x << std::endl;
+    // std::cout << "Sigma Y  " << x_sigma_y << std::endl;
+    // std::cout << "Sigma XY " << x_sigma_xy << std::endl;
+    // std::cout << "Sigma XX " << sigma_xx << std::endl;
 
-    result.x = Ax / delta;
-    result.y = Bx / delta;
+    result[0] = Ax / delta;
+    result[1] = Bx / delta;
+    result[2] = Ay / delta;
+    result[3] = By / delta;
 
     return result;
 }
