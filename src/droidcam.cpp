@@ -3,20 +3,20 @@
 #include "opencv2/opencv.hpp"
 #include <stdio.h>
 #include <iostream>
+#include <chrono>
+#include <ctime>
+#include <cmath>
 
 using namespace cv;
 
 int MAX_KERNEL = 10;
 
-// class Linked_List{
+cv::Point leastSquare(double x[6], cv::Point y[6]);
 
-//     Linked_List *Next;
-//     int data;
-
-// };
-
-int main(int argc, char **argv)
+int main()
 {
+    auto start = std::chrono::system_clock::now();
+
     cv::Mat out;
     cv::Mat element5(5, 5, CV_8U, cv::Scalar(1));
     cv::Mat closed, opened, dilated, eroded;
@@ -24,6 +24,11 @@ int main(int argc, char **argv)
     cv::namedWindow("Track");
 
     cv::Point pred[6];
+    cv::Point x_pred;
+
+    double time[6] = {0, 0, 0, 0, 0, 0};
+
+    int radius = 0;
 
     pred[0] = cv::Point(0, 0);
     pred[1] = cv::Point(0, 0);
@@ -33,22 +38,19 @@ int main(int argc, char **argv)
     pred[5] = cv::Point(0, 0);
 
     // // Malam
-    // int H_low = 126, S_low = 40, V_low = 157;
-    // int H_high = 255, S_high = 192, V_high = 255;
-    // // DP = 2.5
-    //Siang
-    int H_low = 139,
-        S_low = 40, V_low = 155;
-    int H_high = 255, S_high = 156, V_high = 255;
-    // DP = 5
+    // int H_low = 117, S_low = 49, V_low = 82;
+    // int H_high = 255, S_high = 185, V_high = 255;
+    // int DP = 13;
+    ///Siang
+    int H_low = 107, S_low = 70, V_low = 165;
+    int H_high = 255, S_high = 255, V_high = 255;
+    int DP = 10;
 
-    VideoCapture cap("http://192.168.100.5:4747/mjpegfeed");
-    // open the default camera, use something different from 0 otherwise;
-    // Check VideoCapture documentation.
+    VideoCapture cap(0);
 
     if (!cap.isOpened())
         return 0;
-    for (;;)
+    while (true)
     {
         Mat frame, hsv_out;
         cap >> frame;
@@ -71,6 +73,7 @@ int main(int argc, char **argv)
         cv::createTrackbar("H_HIGH", "Track", &H_high, 255);
         cv::createTrackbar("S_HIGH", "Track", &S_high, 255);
         cv::createTrackbar("V_HIGH", "Track", &V_high, 255);
+        cv::createTrackbar("DP", "Track", &DP, 15);
 
         cv::inRange(hsv_out, cv::Scalar(H_low, S_low, V_low), cv::Scalar(H_high, S_high, V_high), mask);
 
@@ -83,46 +86,100 @@ int main(int argc, char **argv)
         // cv::cvtColor(opened, opened, cv::COLOR_GRAY2BGR);
         // cv::bitwise_and(frame, opened, out);
 
+        auto now = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_scnd = now - start;
+
         cv::GaussianBlur(opened, opened, Size(9, 9), 2, 2);
+        cv::HoughCircles(opened, detected, CV_HOUGH_GRADIENT, DP, 50, 200, 100, 0, 0);
 
-        cv::HoughCircles(opened, detected, CV_HOUGH_GRADIENT, 5, 50, 200, 100, 0, 0);
+        // std::cout << "Elapsed time " << elapsed_scnd.count() << std::endl;
+        // std::cout << "Detected Size " << detected.size() << std::endl;
+        // std::cout << "============== " << std::endl;
 
-        // // for (size_t i = 0; i < detected.size(); i++)
-        // // {
-        cv::Point center(cvRound(detected[0][0]), cvRound(detected[0][1]));
-        int radius = cvRound(detected[0][2]);
-
-        cv::circle(frame, center, 3, cv::Scalar(0, 255, 0), -1, 8, 0);
-        cv::circle(frame, center, radius, cv::Scalar(0, 255, 0), 3, 8, 0);
-        // // }
-
-        // std::cout << "X : " << detected[0][0] << " Y : " << detected[0][1] << std::endl;
-
-        for (int i = 5; i > 0 ; i--)
+        for (size_t i = 0; i < detected.size(); i++)
         {
-           
-            pred[i] = pred[i-1];
-        
+            Point center(cvRound(detected[i][0]), cvRound(detected[i][1]));
+            radius = cvRound(detected[i][2]);
+
+            if (radius < 70)
+            {
+                circle(frame, center, radius, Scalar(0, 0, 255), 3, 8, 0);
+                std::cout << radius << std::endl;
+            }
         }
 
-        pred[0] = cv::Point(detected[0][0], detected[0][1]);
-
-        for (int i = 0; i < 6; i++)
+        if (radius != 0)
         {
-            cv::circle(frame, pred[i], 6, cv::Scalar(0, i*10, i * 30), CV_FILLED, 8, 0);
+            for (int i = 5; i >= 0; i--)
+            {
+                cv::circle(frame, pred[i], 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8, 0);
 
-            // std::cout << "pred : " << pred[i]  << std::endl;
+                if (i != 0)
+                {
+                    pred[i] = pred[i - 1];
+                    time[i] = time[i - 1];
+                }
+            }
+
+            time[0] = elapsed_scnd.count();
+            pred[0] = cv::Point(detected[0][0], detected[0][1]);
+
+            x_pred = leastSquare(time, pred);
+        }
+        else
+        {
+            x_pred.x = 0;
+            x_pred.y = 0;
         }
 
-        // imshow("ORIGINAL", frame);
+        std::cout << x_pred.x << "--" << x_pred.y << std::endl;
+
         imshow("MASK", opened);
         // imshow("DILATED", dilated);
         cv::imshow("OUTPUT", frame);
         // imshow("HSV", hsv_out);
+
         if (waitKey(10) == 27)
             break; // stop capturing by pressing ESC
     }
-    // the camera will be closed automatically upon exit
-    // cap.close();
+
     return 0;
+}
+
+cv::Point leastSquare(double x[6], cv::Point y[6])
+{
+
+    double sigma_x = 0;
+    double sigma_xx = 0;
+    double x_sigma_yy = 0;
+    double x_sigma_y = 0;
+    double x_sigma_xy = 0;
+
+    cv::Point result;
+
+    std::cout<<"x "<<x[0]<<std::endl;
+
+    for (int i = 0; i < 5; i++)
+    {
+        sigma_x += x[i];
+        sigma_xx += (x[i] * x[i]);
+        x_sigma_y += y[i].x;
+        x_sigma_xy += (x[i] * y[i].x);
+        x_sigma_yy += (y[i].x * y[i].x);
+    }
+
+    double Ax = (sigma_xx * x_sigma_yy) - (sigma_x * x_sigma_xy);
+    double Bx = 6 * x_sigma_xy - sigma_x * x_sigma_y;
+    double delta = 6 * sigma_xx - std::pow(sigma_x, 2);
+
+    std::cout<<"Sigma X  "<<sigma_x<<std::endl;
+    std::cout<<"Sigma Y  "<<x_sigma_y<<std::endl;
+    std::cout<<"Sigma XY "<<x_sigma_xy<<std::endl;
+    std::cout<<"Sigma XX "<<sigma_xx<<std::endl;
+    std::cout<<"Sigma YY "<<x_sigma_yy<<std::endl;
+
+    result.x = Ax / delta;
+    result.y = Bx / delta;
+
+    return result;
 }
