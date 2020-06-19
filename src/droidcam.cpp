@@ -1,5 +1,7 @@
 // g++ -std=c++11 droidcam.cpp -o droidcam `pkg-config --cflags --libs opencv`
 
+//Taylor J.R Introduction to error analysis 2ed.pdf
+
 #include "opencv2/opencv.hpp"
 #include <stdio.h>
 #include <iostream>
@@ -11,7 +13,8 @@ using namespace cv;
 
 int MAX_KERNEL = 10;
 
-cv::Vec4i leastSquare(double x[6], cv::Point y[6]);
+cv::Vec4f leastSquare(double x[6], cv::Point y[6]);
+cv::Vec4f expLeastSquare(double x[6], cv::Point y[6]);
 
 int main()
 {
@@ -147,9 +150,9 @@ int main()
             int x = pred[0] + pred[1] * t_pred;
             int y = pred[2] + pred[3] * t_pred;
 
-            cv::Point2i center(x,y);
+            cv::Point2i center(x, y);
 
-            cv::circle(frame, center, 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8,0);
+            cv::circle(frame, center, 6, cv::Scalar(i * 10, i * 20, i * 30), CV_FILLED, 8, 0);
         }
 
         imshow("MASK", opened);
@@ -164,7 +167,7 @@ int main()
     return 0;
 }
 
-cv::Vec4i leastSquare(double x[6], cv::Point y[6])
+cv::Vec4f leastSquare(double x[6], cv::Point y[6])
 {
 
     double sigma_x = 0;
@@ -174,10 +177,11 @@ cv::Vec4i leastSquare(double x[6], cv::Point y[6])
     double y_sigma_y = 0;
     double y_sigma_xy = 0;
 
-    cv::Vec4i result;
+    cv::Vec4f result;
 
     for (int i = 0; i < 6; i++)
     {
+
         sigma_x += x[i];
         sigma_xx += (x[i] * x[i]);
 
@@ -204,6 +208,49 @@ cv::Vec4i leastSquare(double x[6], cv::Point y[6])
     result[0] = Ax / delta;
     result[1] = Bx / delta;
     result[2] = Ay / delta;
+    result[3] = By / delta;
+
+    return result;
+}
+
+cv::Vec4f expLeastSquare(double x[6], cv::Point y[6])
+{
+    double sigma_x = 0;
+    double sigma_xx = 0;
+    double x_sigma_y = 0;
+    double x_sigma_xy = 0;
+    double y_sigma_y = 0;
+    double y_sigma_xy = 0;
+
+    cv::Vec4f result;
+
+    for (int i = 0; i < 6; i++)
+    {
+
+        sigma_x += x[i];
+        sigma_xx += (x[i] * x[i]);
+
+        x_sigma_y += std::log(y[i].x);
+        x_sigma_xy += (x[i] * std::log(y[i].x));
+
+        y_sigma_y += std::log(y[i].y);
+        y_sigma_xy += (x[i] * std::log(y[i].y));
+    }
+
+    double ax = (sigma_xx * x_sigma_y) - (sigma_x * x_sigma_xy);
+    double Bx = 6 * x_sigma_xy - sigma_x * x_sigma_y;
+
+    double ay = (sigma_xx * y_sigma_y) - (sigma_x * y_sigma_xy);
+    double By = 6 * y_sigma_xy - sigma_x * y_sigma_y;
+
+    double delta = 6 * sigma_xx - std::pow(sigma_x, 2);
+
+    double Ax = std::exp((double)ax / delta);
+    double Ay = std::exp((double)ay / delta);
+
+    result[0] = Ax;
+    result[1] = Bx / delta;
+    result[2] = Ay;
     result[3] = By / delta;
 
     return result;
